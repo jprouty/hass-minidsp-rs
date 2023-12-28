@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers import config_entry_flow
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 
-from .const import DISPATCH_CONTROLLER_DISCOVERED, DOMAIN, DEFAULT_SCAN_INTERVAL
+from .const import DEFAULT_SCAN_INTERVAL, DISPATCH_DEVICE_DISCOVERED, DOMAIN
 from .discovery import async_start_network_controller, async_stop_network_controller
 
 _LOGGER = logging.getLogger(__name__)
@@ -21,7 +21,7 @@ async def _async_has_devices(hass: HomeAssistant) -> bool:
     def dispatch_discovered(_):
         device_ready.set()
 
-    async_dispatcher_connect(hass, DISPATCH_CONTROLLER_DISCOVERED, dispatch_discovered)
+    async_dispatcher_connect(hass, DISPATCH_DEVICE_DISCOVERED, dispatch_discovered)
 
     nc = await async_start_network_controller(hass)
 

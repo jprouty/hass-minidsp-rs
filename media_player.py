@@ -1,13 +1,14 @@
 """Support for Devialet Expect integrated amps."""
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime
 import logging
 
 from homeassistant.components.media_player import (
     MediaPlayerEntity,
     MediaPlayerEntityFeature,
 )
+from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
@@ -17,20 +18,25 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from .const import (
     DATA_NETWORK_CONTROLLER,
     DEFAULT_SCAN_INTERVAL,
-    DISPATCH_CONTROLLER_DISCOVERED,
+    DISPATCH_DEVICE_DISCOVERED,
+    DISPATCH_DEVICE_UPDATE,
     DOMAIN,
     MANUFACTURER,
     MODEL,
+    UNAVAILABLE_TIMEOUT_S,
 )
 from .devialet_expert import Device
 
 _LOGGER = logging.getLogger(__name__)
 
-SCAN_INTERVAL = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
+# SCAN_INTERVAL = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
+# SELECT_SOUND_MODE
 SUPPORT_DEVIALET = (
     MediaPlayerEntityFeature.VOLUME_SET
+    | MediaPlayerEntityFeature.VOLUME_STEP
     | MediaPlayerEntityFeature.VOLUME_MUTE
+    | MediaPlayerEntityFeature.TURN_ON
     | MediaPlayerEntityFeature.TURN_OFF
     | MediaPlayerEntityFeature.SELECT_SOURCE
 )
@@ -51,12 +57,12 @@ async def async_setup_entry(
         async_add_entities([device])
 
     # Create Entities for discovered devices.
-    for device in nc.devices():
+    for device in nc.get_devices():
         init_device(device)
 
     # Connect to register any further components
     config.async_on_unload(
-        async_dispatcher_connect(hass, DISPATCH_CONTROLLER_DISCOVERED, init_device)
+        async_dispatcher_connect(hass, DISPATCH_DEVICE_DISCOVERED, init_device)
     )
 
 
@@ -66,21 +72,52 @@ class DevialetDevice(MediaPlayerEntity):
     def __init__(self, device: Device) -> None:
         """Initialize the Devialet device."""
         self._device = device
+        self._last_update = datetime.now()
 
-    # async def async_update(self) -> None:
-    #     """Get the latest details from the device."""
-    #     await self._client.async_update()
+    @property
+    def state(self) -> MediaPlayerState | None:
+        """State of the media player."""
+        return MediaPlayerState.ON if self._device.power else MediaPlayerState.OFF
+
+    @property
+    def entity_picture(self) -> str | None:
+        """Url of a picture to show for the entity."""
+        return "https://assets.devialet.com/en-us/media/dvl_media/Expert_Packshot_220-3_4.png?twic=v1/background=f4f4f4/cover=800x800"
+
+    @property
+    def volume_step(self) -> float | None:
+        """Volume step to use for the volume_up and volume_down services."""
+        return 0.01
+
+    @property
+    def icon(self) -> str | None:
+        """Icon to use in the frontend.
+
+        Icons start with mdi: plus an identifier. You probably don't need this since Home Assistant already provides default icons for all entities according to its device_class. This should be used only in the case where there either is no matching device_class or where the icon used for the device_class would be confusing or misleading.
+        """
+        return "mdi:amplifier"
+
+    @property
+    def should_poll(self) -> bool:
+        """Should Home Assistant check with the entity for an updated state. If set to False, entity will need to notify Home Assistant of new updates by calling one of the schedule update methods."""
+        return False
 
     @property
     def device_info(self) -> DeviceInfo:
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._device.name)},
-            name=self.device.name,
+            name=self._device.name,
             manufacturer=MANUFACTURER,
             model=MODEL,
             sw_version="10.1.0",
         )
+
+    @property
+    def available(self) -> bool:
+        """Indicate if Home Assistant is able to read the state and control the underlying device."""
+        time_since_last_update = datetime.now() - self._last_update
+        return time_since_last_update.total_seconds() < UNAVAILABLE_TIMEOUT_S
 
     @property
     def name(self) -> str:
@@ -95,7 +132,7 @@ class DevialetDevice(MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        return self._device.volume
+        return self._device.volume_hass_scale()
 
     @property
     def is_volume_muted(self) -> bool | None:
@@ -116,6 +153,49 @@ class DevialetDevice(MediaPlayerEntity):
     def source(self) -> str | None:
         """Return the current input source."""
         return self._device.get_source()
+
+    async def async_added_to_hass(self) -> None:
+        """Call on adding to hass."""
+
+        # Register for connect/disconnect/update events
+        # @callback
+        # def controller_disconnected(ctrl: Controller, ex: Exception) -> None:
+        #     """Disconnected from controller."""
+        #     if ctrl is not self._controller:
+        #         return
+        #     self.set_available(False, ex)
+
+        # self.async_on_remove(
+        #     async_dispatcher_connect(
+        #         self.hass, DISPATCH_CONTROLLER_DISCONNECTED, controller_disconnected
+        #     )
+        # )
+
+        # @callback
+        # def controller_reconnected(ctrl: Controller) -> None:
+        #     """Reconnected to controller."""
+        #     if ctrl is not self._controller:
+        #         return
+        #     self.set_available(True)
+
+        # self.async_on_remove(
+        #     async_dispatcher_connect(
+        #         self.hass, DISPATCH_CONTROLLER_RECONNECTED, controller_reconnected
+        #     )
+        # )
+
+        @callback
+        def device_update(device: Device, new_state: bool) -> None:
+            """Handle Device data updates."""
+            # Ignore device updates for other devices:
+            if self._device.name != device.name:
+                return
+            self._last_update = datetime.now()
+            self.async_write_ha_state()
+
+        self.async_on_remove(
+            async_dispatcher_connect(self.hass, DISPATCH_DEVICE_UPDATE, device_update)
+        )
 
     async def async_volume_up(self) -> None:
         """Volume up media player."""

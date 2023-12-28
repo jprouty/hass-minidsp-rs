@@ -53,7 +53,7 @@ class Device:
 
     def __init__(self, status_data, addr) -> None:
         self.ip_address = addr[0]
-        self.name = status_data[19:50].decode("UTF-8")
+        self.name = status_data[19:50].decode("UTF-8").replace("\x00", "")
         self.sources = []
         self.source = (status_data[308] & 0x3C) >> 2
         for i in range(0, 15):
@@ -101,7 +101,11 @@ class Device:
         return [s.name for s in self.sources if s.is_enabled]
 
     def get_source(self):
-        return self.sources[self.source]
+        return self.sources[self.source].name
+
+    def volume_hass_scale(self):
+        """Volume as a float 0-1."""
+        return self.volume / 256
 
     def volume_as_db(self):
         return f"{(self.volume - 195) / 2.0}dB"
@@ -110,13 +114,13 @@ class Device:
         return f'Devialet Expert "{self.name}" at {self.ip_address}. Volume: {self.volume_as_db()} Power: {self.power} Muted: {self.muted} Curr Source: {self.get_source()}'
 
     async def async_turn_on(self):
-        await self.set_power_state(True)
+        await self.async_set_power_state(True)
 
     async def async_turn_off(self):
-        await self.set_power_state(False)
+        await self.async_set_power_state(False)
 
     async def async_toggle_power(self):
-        await self.set_power_state(not self.power)
+        await self.async_set_power_state(not self.power)
 
     async def async_set_power_state(self, power_state):
         data = bytearray(142)
@@ -161,19 +165,20 @@ class Device:
             data[9] = out_val & 0x00FF
         await self.async_send_command(data)
 
-    async def async_send_command(command: bytearray, times: int = 2):
+    async def async_send_command(self, command: bytearray, times: int = 2):
         logger.info("async_send_command dry_run")
-        # loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
 
-        # on_close = loop.create_future()
-        # transport, protocol = await loop.create_datagram_endpoint(
-        #     lambda: SendCommandProtocol(command, on_close, times, device),
-        #     remote_addr=(self.ip_address, COMMAND_PORT))
+        on_close = loop.create_future()
+        transport, protocol = await loop.create_datagram_endpoint(
+            lambda: SendCommandProtocol(command, on_close, times, self),
+            remote_addr=(self.ip_address, COMMAND_PORT),
+        )
 
-        # try:
-        #     await on_close
-        # finally:
-        #     transport.close() # Remove?
+        try:
+            await on_close
+        finally:
+            transport.close()  # Remove?
 
 
 class SendCommandProtocol:
@@ -198,8 +203,8 @@ class SendCommandProtocol:
         self.transport = transport
         logger.info("SendCommandProtocol - connection_made")
         for i in range(self.times):
-            prepare_command()
-            self.transport.sendto(self.message.encode())
+            self.prepare_command()
+            self.transport.sendto(self.command)
         self.transport.close()  # Queue up the transport to be closed once tx buffers are cleared.
 
     def datagram_received(self, data, addr):
@@ -250,10 +255,12 @@ class NetworkController:
             self.devices[device_update.name] = device_update
             for listener in self.on_new_device:
                 listener(device_update)
-        elif self.devices[device_update.name].update(device_update):
-            logger.info(f"Expert device has update: {device_update}")
+        else:
+            new_state = self.devices[device_update.name].update(device_update)
+            if new_state:
+                logger.info(f"Expert device has update w/ new state: {device_update}")
             for listener in self.on_device_update:
-                listener(self.devices[device_update.name])
+                listener(self.devices[device_update.name], new_state)
 
     async def listen(self):
         """Creates a UDP listener for Devialet status messages."""
@@ -284,7 +291,7 @@ class NetworkController:
         self.on_device_update.append(callable)
 
     def get_devices(self):
-        return self.devices.values()
+        return [v for v in self.devices.values()]
 
 
 def test_on_new_device(device):
@@ -295,15 +302,16 @@ def test_on_device_update(device):
     print(f"Device update: {device}")
 
 
-if __name__ == "__main__":
-    logging.basicConfig(level="INFO")
-
+async def test_discovery():
     nc = NetworkController()
-    logger.info(f"Devices: {nc.get_devices()}")
     nc.add_listener_on_device_update(test_on_device_update)
     nc.add_listener_on_new_device(test_on_new_device)
-    asyncio.run(nc.listen())
-    asyncio.run(asyncio.sleep(1))
+    await nc.listen()
+    await asyncio.sleep(5)
+    await nc.close()
     logger.info(f"Devices: {nc.get_devices()}")
-    asyncio.run(nc.stop())
-    asyncio.run(asyncio.sleep(1))
+
+
+if __name__ == "__main__":
+    logging.basicConfig(level="INFO")
+    asyncio.run(test_discovery())

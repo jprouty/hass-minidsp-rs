@@ -7,46 +7,12 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
     DATA_NETWORK_CONTROLLER,
-    DISPATCH_CONTROLLER_DISCONNECTED,
-    DISPATCH_CONTROLLER_DISCOVERED,
-    DISPATCH_CONTROLLER_RECONNECTED,
-    DISPATCH_CONTROLLER_UPDATE,
-    DISPATCH_ZONE_UPDATE,
+    DISPATCH_DEVICE_DISCOVERED,
+    DISPATCH_DEVICE_UPDATE,
 )
 from .devialet_expert import NetworkController
 
 _LOGGER = logging.getLogger(__name__)
-
-
-# class DiscoveryService(pizone.Listener):
-#     """Discovery data and interfacing with pizone library."""
-
-#     def __init__(self, hass: HomeAssistant) -> None:
-#         """Initialise discovery service."""
-#         super().__init__()
-#         self.hass = hass
-#         self.pi_disco: pizone.DiscoveryService | None = None
-
-#     # Listener interface
-#     def controller_discovered(self, ctrl: pizone.Controller) -> None:
-#         """Handle new controller discoverery."""
-#         async_dispatcher_send(self.hass, DISPATCH_CONTROLLER_DISCOVERED, ctrl)
-
-#     def controller_disconnected(self, ctrl: pizone.Controller, ex: Exception) -> None:
-#         """On disconnect from controller."""
-#         async_dispatcher_send(self.hass, DISPATCH_CONTROLLER_DISCONNECTED, ctrl, ex)
-
-#     def controller_reconnected(self, ctrl: pizone.Controller) -> None:
-#         """On reconnect to controller."""
-#         async_dispatcher_send(self.hass, DISPATCH_CONTROLLER_RECONNECTED, ctrl)
-
-#     def controller_update(self, ctrl: pizone.Controller) -> None:
-#         """System update message is received from the controller."""
-#         async_dispatcher_send(self.hass, DISPATCH_CONTROLLER_UPDATE, ctrl)
-
-#     def zone_update(self, ctrl: pizone.Controller, zone: pizone.Zone) -> None:
-#         """Zone update message is received from the controller."""
-#         async_dispatcher_send(self.hass, DISPATCH_ZONE_UPDATE, ctrl, zone)
 
 
 async def async_start_network_controller(hass: HomeAssistant):
@@ -58,6 +24,15 @@ async def async_start_network_controller(hass: HomeAssistant):
 
     nc = NetworkController()
     hass.data[DATA_NETWORK_CONTROLLER] = nc
+
+    def on_new_device(device):
+        async_dispatcher_send(hass, DISPATCH_DEVICE_DISCOVERED, device)
+
+    def on_device_update(device, new_state):
+        async_dispatcher_send(hass, DISPATCH_DEVICE_UPDATE, device, new_state)
+
+    nc.add_listener_on_new_device(on_new_device)
+    nc.add_listener_on_device_update(on_device_update)
     await nc.listen()
 
     return nc
