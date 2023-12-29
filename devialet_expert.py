@@ -163,6 +163,12 @@ class Device:
         data[7] = 0x07
         await self.async_send_command(data)
 
+    async def async_volume_up(self):
+        await self.async_set_volume_int(self.volume + 1)
+
+    async def async_volume_down(self):
+        await self.async_set_volume_int(self.volume - 1)
+
     async def async_set_volume_float(self, volume_float):
         if volume_float > 1:
             volume_float = 1

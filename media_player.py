@@ -132,7 +132,7 @@ class DevialetDevice(MediaPlayerEntity):
     @property
     def volume_level(self) -> float | None:
         """Volume level of the media player (0..1)."""
-        return self._device.volume_hass_scale()
+        return self._device.volume_as_float()
 
     @property
     def is_volume_muted(self) -> bool | None:
@@ -207,7 +207,7 @@ class DevialetDevice(MediaPlayerEntity):
 
     async def async_set_volume_level(self, volume: float) -> None:
         """Set volume level, range 0..1."""
-        await self._device.async_set_volume(volume)
+        await self._device.async_set_volume_float(volume)
 
     async def async_mute_volume(self, mute: bool) -> None:
         """Mute (true) or unmute (false) media player."""

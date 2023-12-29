@@ -25,10 +25,10 @@ async def async_start_network_controller(hass: HomeAssistant):
     nc = NetworkController()
     hass.data[DATA_NETWORK_CONTROLLER] = nc
 
-    def on_new_device(device):
+    async def on_new_device(device):
         async_dispatcher_send(hass, DISPATCH_DEVICE_DISCOVERED, device)
 
-    def on_device_update(device, new_state):
+    async def on_device_update(device, new_state):
         async_dispatcher_send(hass, DISPATCH_DEVICE_UPDATE, device, new_state)
 
     nc.add_listener_on_new_device(on_new_device)
