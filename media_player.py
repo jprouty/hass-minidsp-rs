@@ -87,7 +87,7 @@ class DevialetDevice(MediaPlayerEntity):
     @property
     def volume_step(self) -> float | None:
         """Volume step to use for the volume_up and volume_down services."""
-        return 0.01
+        return 1/255
 
     @property
     def icon(self) -> str | None:
