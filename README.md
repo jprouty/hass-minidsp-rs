@@ -1,1 +1,3 @@
-# devialet_expert
+# Home Assistant integration for minidsp-rs
+
+

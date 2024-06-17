@@ -1,8 +1,8 @@
-"""Discovery service for Devialet Expert."""
+"""Discovery service for minidsp-rs."""
+
 import logging
 
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import aiohttp_client
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import (
@@ -10,17 +10,17 @@ from .const import (
     DISPATCH_DEVICE_DISCOVERED,
     DISPATCH_DEVICE_UPDATE,
 )
-from .devialet_expert import NetworkController
+from .minidsp_rs_client import NetworkController
 
 _LOGGER = logging.getLogger(__name__)
 
 
 async def async_start_network_controller(hass: HomeAssistant):
-    """Start the Devialet Expert network controller."""
+    """Start the minidsp-rs network controller."""
     if nc := hass.data.get(DATA_NETWORK_CONTROLLER):
         # Already started
         return nc
-    _LOGGER.info("Starting Devialet Expert Network Controller")
+    _LOGGER.info("Starting minidsp-rs Network Controller")
 
     nc = NetworkController()
     hass.data[DATA_NETWORK_CONTROLLER] = nc
@@ -28,11 +28,11 @@ async def async_start_network_controller(hass: HomeAssistant):
     async def on_new_device(device):
         async_dispatcher_send(hass, DISPATCH_DEVICE_DISCOVERED, device)
 
-    async def on_device_update(device, new_state):
-        async_dispatcher_send(hass, DISPATCH_DEVICE_UPDATE, device, new_state)
+    # async def on_device_update(device, new_state):
+    #     async_dispatcher_send(hass, DISPATCH_DEVICE_UPDATE, device, new_state)
 
     nc.add_listener_on_new_device(on_new_device)
-    nc.add_listener_on_device_update(on_device_update)
+    # nc.add_listener_on_device_update(on_device_update)
     await nc.listen()
 
     return nc
@@ -46,4 +46,4 @@ async def async_stop_network_controller(hass: HomeAssistant):
     await nc.close()
     del hass.data[DATA_NETWORK_CONTROLLER]
 
-    _LOGGER.info("Stopped Devialet Expert Network Controller")
+    _LOGGER.info("Stopped minidsp-rs Network Controller")

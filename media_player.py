@@ -1,4 +1,5 @@
 """Support for Devialet Expect integrated amps."""
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -25,20 +26,18 @@ from .const import (
     MODEL,
     UNAVAILABLE_TIMEOUT_S,
 )
-from .devialet_expert import Device
+from .minidsp_rs_client import Device
 
 _LOGGER = logging.getLogger(__name__)
 
 # SCAN_INTERVAL = timedelta(seconds=DEFAULT_SCAN_INTERVAL)
 
-# SELECT_SOUND_MODE
-SUPPORT_DEVIALET = (
+SUPPORT_MINIDSP_RS = (
     MediaPlayerEntityFeature.VOLUME_SET
     | MediaPlayerEntityFeature.VOLUME_STEP
     | MediaPlayerEntityFeature.VOLUME_MUTE
-    | MediaPlayerEntityFeature.TURN_ON
-    | MediaPlayerEntityFeature.TURN_OFF
     | MediaPlayerEntityFeature.SELECT_SOURCE
+    | MediaPlayerEntityFeature.SELECT_SOUND_MODE
 )
 
 
@@ -50,10 +49,10 @@ async def async_setup_entry(
 
     @callback
     def init_device(device: Device):
-        """Register the Devialet device."""
-        _LOGGER.info(f"Devialet Device {device.name} discovered")
+        """Register the minidsp-rs device."""
+        _LOGGER.info(f"miniDSP RS device {device.name} discovered")
 
-        device = DevialetDevice(device)
+        device = MiniDspRsDevice(device)
         async_add_entities([device])
 
     # Create Entities for discovered devices.
@@ -66,28 +65,28 @@ async def async_setup_entry(
     )
 
 
-class DevialetDevice(MediaPlayerEntity):
-    """Representation of a Devialet device."""
+class MiniDspRsDevice(MediaPlayerEntity):
+    """Representation of a minidsp-rs device."""
 
     def __init__(self, device: Device) -> None:
-        """Initialize the Devialet device."""
+        """Initialize the minidsp-rs device."""
         self._device = device
         self._last_update = datetime.now()
 
     @property
     def state(self) -> MediaPlayerState | None:
         """State of the media player."""
-        return MediaPlayerState.ON if self._device.power else MediaPlayerState.OFF
+        return MediaPlayerState.ON
 
     @property
     def entity_picture(self) -> str | None:
         """Url of a picture to show for the entity."""
-        return "https://assets.devialet.com/en-us/media/dvl_media/Expert_Packshot_220-3_4.png?twic=v1/background=f4f4f4/cover=800x800"
+        return "https://www.minidsp.com/images/stories/virtuemart/product/Flex-HTx-(front)-600px.png"
 
     @property
     def volume_step(self) -> float | None:
         """Volume step to use for the volume_up and volume_down services."""
-        return 1/255
+        return 1 / 255
 
     @property
     def icon(self) -> str | None:
@@ -147,12 +146,22 @@ class DevialetDevice(MediaPlayerEntity):
     @property
     def supported_features(self) -> MediaPlayerEntityFeature:
         """Flag media player features that are supported."""
-        return SUPPORT_DEVIALET
+        return SUPPORT_MINIDSP_RS
 
     @property
     def source(self) -> str | None:
         """Return the current input source."""
         return self._device.get_source()
+
+    @property
+    def sound_mode(self) -> str | None:
+        """The current sound mode of the media player."""
+        return f"Preset {self._device.preset + 1}"
+
+    @property
+    def sound_mode_list(self) -> str | None:
+        """Dynamic list of available sound modes.."""
+        return ["Preset 1", "Preset 2", "Preset 3", "Preset 4"]
 
     async def async_added_to_hass(self) -> None:
         """Call on adding to hass."""
@@ -213,14 +222,11 @@ class DevialetDevice(MediaPlayerEntity):
         """Mute (true) or unmute (false) media player."""
         await self._device.async_mute(mute)
 
-    async def async_turn_off(self) -> None:
-        """Turn off media player."""
-        await self._device.async_turn_off()
-
-    async def async_turn_on(self) -> None:
-        """Turn on media player."""
-        await self._device.async_turn_on()
-
     async def async_select_source(self, source: str) -> None:
         """Select input source."""
         await self._device.async_select_source(source)
+
+    async def async_select_sound_mode(self, sound_mode):
+        """Switch the sound mode of the entity."""
+        sound_mode = int(sound_mode.split(" ")[1]) - 1
+        await self._device.async_select_preset(sound_mode)

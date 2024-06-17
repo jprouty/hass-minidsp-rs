@@ -34,8 +34,8 @@ async def _async_has_devices(hass: HomeAssistant) -> bool:
         _LOGGER.info("No devices found")
         return False
 
-    _LOGGER.info("Devialet Devices %s", nc.get_devices())
+    _LOGGER.info("minidsp-rs devices %s", nc.get_devices())
     return True
 
 
-config_entry_flow.register_discovery_flow(DOMAIN, "Devialet Expert", _async_has_devices)
+config_entry_flow.register_discovery_flow(DOMAIN, "miniDSP RS", _async_has_devices)
