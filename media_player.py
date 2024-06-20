@@ -114,7 +114,7 @@ class MiniDspRsMediaPlayer(MediaPlayerEntity):
         """Return the device info."""
         return DeviceInfo(
             identifiers={(DOMAIN, self._device.name)},
-            name=self._device.name,
+            name=f"Flex HTx {self._device.name}",
             manufacturer=MANUFACTURER,
             model=MODEL,
             sw_version="10.1.0",
@@ -123,18 +123,19 @@ class MiniDspRsMediaPlayer(MediaPlayerEntity):
     @property
     def available(self) -> bool:
         """Indicate if Home Assistant is able to read the state and control the underlying device."""
+        # TODO: Use discovery packets as an indicator of availability. ie, if nothing is received within 60s, consider the device offline.
         time_since_last_update = datetime.now() - self._last_update
         return time_since_last_update.total_seconds() < UNAVAILABLE_TIMEOUT_S
 
     @property
     def name(self) -> str:
         """Return the name of the device."""
-        return self._device.name
+        return f"Flex HTx {self._device.name}"
 
     @property
     def unique_id(self) -> str:
         """Return the unique id of the device."""
-        return self._device.name
+        return f"Flex HTx {self._device.name}"
 
     @property
     def volume_level(self) -> float | None:
