@@ -1,7 +1,8 @@
-"""Support for Devialet Expect integrated amps."""
+"""Support for miniDSP-RS Expect integrated amps."""
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 import logging
 
@@ -12,7 +13,10 @@ from homeassistant.components.media_player import (
 from homeassistant.components.media_player.const import MediaPlayerState
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.dispatcher import (
+    async_dispatcher_connect,
+    async_dispatcher_send,
+)
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 
@@ -52,8 +56,12 @@ async def async_setup_entry(
         """Register the minidsp-rs device."""
         _LOGGER.info(f"miniDSP RS device {device.name} discovered")
 
-        device = MiniDspRsDevice(device)
-        async_add_entities([device])
+        entity = MiniDspRsMediaPlayer(device)
+        # Move?
+        config.async_create_background_task(
+            hass, device.start_websocket_listener(), "minidsp-rs websocket listener"
+        )
+        async_add_entities([entity])
 
     # Create Entities for discovered devices.
     for device in nc.get_devices():
@@ -65,7 +73,7 @@ async def async_setup_entry(
     )
 
 
-class MiniDspRsDevice(MediaPlayerEntity):
+class MiniDspRsMediaPlayer(MediaPlayerEntity):
     """Representation of a minidsp-rs device."""
 
     def __init__(self, device: Device) -> None:
@@ -165,6 +173,10 @@ class MiniDspRsDevice(MediaPlayerEntity):
 
     async def async_added_to_hass(self) -> None:
         """Call on adding to hass."""
+        # async def update():
+        #     entity.async_schedule_update_ha_state()
+
+        # device.add_listener_on_update(update)
 
         # Register for connect/disconnect/update events
         # @callback
@@ -193,18 +205,23 @@ class MiniDspRsDevice(MediaPlayerEntity):
         #     )
         # )
 
+        async def on_update():
+            async_dispatcher_send(self.hass, DISPATCH_DEVICE_UPDATE)
+
+        self._device.add_listener_on_update(on_update)
+
         @callback
-        def device_update(device: Device, new_state: bool) -> None:
+        def device_update() -> None:
             """Handle Device data updates."""
-            # Ignore device updates for other devices:
-            if self._device.name != device.name:
-                return
             self._last_update = datetime.now()
             self.async_write_ha_state()
 
         self.async_on_remove(
             async_dispatcher_connect(self.hass, DISPATCH_DEVICE_UPDATE, device_update)
         )
+
+    async def async_will_remove_from_hass(self) -> None:
+        self._device.clear_on_update_listeners()
 
     async def async_volume_up(self) -> None:
         """Volume up media player."""

@@ -1,4 +1,5 @@
-"""Platform for the Devialet Expert."""
+"""Platform for the miniDSP-RS."""
+
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry
@@ -27,7 +28,7 @@ CONFIG_SCHEMA = vol.Schema(
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Register the Devialet Expect component config."""
+    """Register the miniDSP-RS component config."""
     # Start the discovery service
     await async_start_network_controller(hass)
 

@@ -1,4 +1,4 @@
-"""Config flow for Devialet Expert."""
+"""Config flow for miniDSP-RS."""
 
 import asyncio
 from contextlib import suppress

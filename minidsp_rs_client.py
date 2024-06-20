@@ -1,5 +1,6 @@
 """A simply py client for minidsp-rs"""
 
+from types import coroutine
 import aiohttp
 import asyncio
 import ipaddress
@@ -8,6 +9,7 @@ import logging
 import socket
 from typing import Self
 from websockets import WebSocketClientProtocol
+import websockets
 from websockets.client import connect
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,8 @@ class Device:
     preset: int = 0
     volume_db: float = 0
     websocket: WebSocketClientProtocol = None
+    stopped: bool = True
+    on_update: list[coroutine] = []
 
     def __init__(self, discovery_packet: "DiscoveryPacket") -> None:
         self.name = discovery_packet.name
@@ -39,13 +43,18 @@ class Device:
         self.muted = True
         self.session = aiohttp.ClientSession()
         self.config_url = f"http://{self.ip_address}:{self.port}/devices/0/config"
+        self.on_update = []
 
-    async def close(self):
-        await self.session.close()
-        if self.websocket:
-            logger.info(f"Stopping websocket listener for '{self.name}'")
-            await self.websocket.close()
-            logger.info(f"Stopped")
+    def add_listener_on_update(self, callable):
+        self.on_update.append(callable)
+
+    def clear_on_update_listeners(self):
+        self.on_update = []
+
+    async def notify_on_update_listeners(self):
+        awaits = [listener() for listener in self.on_update]
+        logger.info(f"Notifying {len(awaits)} update listeners")
+        await asyncio.gather(*awaits)
 
     # async get get_sources(self):
     #     no api available for this? devices/0/get.schema doesn't correctly filter the available options based on model.
@@ -53,15 +62,29 @@ class Device:
     async def start_websocket_listener(self):
         logger.info(f"Starting websocket listener for '{self.name}'")
         ws_url = f"ws://{self.ip_address}:{self.port}/devices/0?poll=true"
-        self.websocket = await connect(ws_url, close_timeout=1)
-        async for message in self.websocket:
-            logger.info(f"Message: {message}")
-            self.update(message)
-            # while self.ws_listener_running:
-            #     update = await websocket.recv()
-            #     logger.info("Update!")
-            #     self.update(update)
+        self.stopped = False
+        async for websocket in connect(ws_url, close_timeout=1):
+            if self.stopped:
+                break
+            try:
+                self.websocket = websocket
+                async for message in websocket:
+                    logger.info(f"Message: {message}")
+                    self.update(message)
+                    await self.notify_on_update_listeners()
+            except websockets.ConnectionClosed:
+                logger.warn(f"Websocket connection interrupting - reconnecting")
+                continue
+
         logger.info(f"Websocket listener closed '{self.name}'")
+
+    async def close(self):
+        await self.session.close()
+        if self.websocket:
+            logger.info(f"Stopping websocket listener for '{self.name}'")
+            self.stopped = True
+            await self.websocket.close()
+            logger.info(f"Stopped")
 
     def update(self, update_json) -> bool:
         """Update this Device based on a status msg from the websocket protocol."""
@@ -98,9 +121,11 @@ class Device:
         return f'miniDSP "{self.name}" at {self.ip_address}:{self.port}. Volume: {self.volume_as_db()} {self.volume_as_float()} Muted: {self.muted} Source: {"None" if self.source is None else self.get_source()} Preset: {self.preset}'
 
     async def async_mute(self, mute_state):
+        self.muted = mute_state
         await self.session.post(
             self.config_url, json={"master_status": {"mute": mute_state}}
         )
+        await self.notify_on_update_listeners()
 
     async def async_volume_up(self):
         await self.async_set_volume_db(self.volume_db + 0.5)
@@ -123,11 +148,12 @@ class Device:
             volume_db = MIN_VOL_DB
         elif volume_db > MAX_VOL_DB:
             volume_db = MAX_VOL_DB
-        self.volume_db = volume_db
         logger.info(f"setting volume to {volume_db}")
+        self.volume_db = volume_db
         await self.session.post(
             self.config_url, json={"master_status": {"volume": volume_db}}
         )
+        await self.notify_on_update_listeners()
 
     async def async_select_source(self, new_source_name):
         logger.info(f"Selecting source {new_source_name}")
@@ -137,6 +163,7 @@ class Device:
         await self.session.post(
             self.config_url, json={"master_status": {"source": new_source_name}}
         )
+        await self.notify_on_update_listeners()
 
     async def async_select_preset(self, preset):
         """Set the preset, 0 indexed (e.g. 0 is 'Preset 1')"""
@@ -147,6 +174,7 @@ class Device:
         await self.session.post(
             self.config_url, json={"master_status": {"preset": preset}}
         )
+        await self.notify_on_update_listeners()
 
 
 class DiscoveryPacket:
@@ -226,7 +254,6 @@ class NetworkController:
         self.status_transport = None
         self.status_protocol = None
         self.on_new_device = []
-        self.on_device_update = []
 
     async def async_on_discovery_packet(self, packet):
         awaits = []
